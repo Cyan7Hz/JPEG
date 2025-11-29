@@ -1,3 +1,19 @@
+""" Module for DCT Transformations: dct_transform.py
+
+This module provides functions for performing DCT (Discrete Cosine Transform) 
+operations on image blocks. It includes utilities for computing DCT bases and 
+applying DCT transforms.
+"""
+
+
+
+
+
+
+
+
+
+
 import numpy as np
 import json
 import os

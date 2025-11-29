@@ -6,19 +6,19 @@ import config
 
 def encode_image(image_path: str) -> dict:
     """图像编码流程"""
+
     print("=== 开始图像编码 ===")
     
     # 确保输出目录存在
     os.makedirs(config.OUTPUT_DIR, exist_ok=True)
     
-    # 1. 读取图像
+    # 1. 读取图像，转换为YCrCb色彩空间
     print(f"读取图像: {image_path}")
     image = image_io.read_image(image_path)
-    # if image.ndim == 3:
-    #     image = image_io.convert_to_grayscale(image)
+    image = image_io.rgb_to_ycrcb(image)
     image_height, image_width, image_channels = image.shape
     
-    # 保存图像元数据
+    # 图像元数据
     metadata = {
         'height': image_height,
         'width': image_width,

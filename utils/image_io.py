@@ -9,6 +9,23 @@ from PIL import Image
 import os
 import json
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+# PART 1: 图像输入输出 -----------------------------------------------------------
+
+
+
 def read_image(image_path):
     """
     读取图像文件并转换为numpy数组
@@ -89,6 +106,176 @@ def save_image(image_array, output_path):
         raise IOError(f"保存图像失败: {str(e)}")
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# PART 2: 色彩空间转换 -----------------------------------------------------------
+
+
+
+def rgb_to_ycrcb(image_array):
+    """
+    将RGB图像转换为YCrCb色彩空间
+    
+    Args:
+        image_array: RGB图像的numpy数组，形状为(height, width, channels)
+                    值范围应为[0, 255]
+    
+    Returns:
+        numpy.ndarray: YCrCb图像的numpy数组，形状为(height, width, channels)
+                      值范围为[0, 255]
+    
+    Raises:
+        ValueError: 当输入图像格式不正确时
+    """
+    # 检查输入格式
+    if not isinstance(image_array, np.ndarray):
+        raise ValueError("输入必须是numpy数组")
+    
+    if len(image_array.shape) != 3 or image_array.shape[2] != 3:
+        raise ValueError("输入必须是RGB图像，形状为(H, W, 3)")
+    
+    # 确保值在有效范围内
+    image_array = np.clip(image_array, 0, 255)
+    
+    # 将图像值归一化到[0, 1]范围
+    rgb_normalized = image_array / 255.0
+    
+    # 获取图像尺寸
+    height, width = rgb_normalized.shape[:2]
+    
+    # 创建输出数组
+    ycrcb_image = np.zeros_like(rgb_normalized)
+    
+    # 使用标准的RGB到YCrCb转换公式
+    # Y  = 0.299*R + 0.587*G + 0.114*B
+    # Cr = 0.500*R - 0.419*G - 0.081*B + 0.5
+    # Cb = -0.169*R - 0.331*G + 0.500*B + 0.5
+    
+    # 提取R, G, B通道
+    R = rgb_normalized[:, :, 0]
+    G = rgb_normalized[:, :, 1]
+    B = rgb_normalized[:, :, 2]
+    
+    # 计算Y, Cr, Cb通道
+    Y = 0.299 * R + 0.587 * G + 0.114 * B
+    Cr = 0.500 * R - 0.419 * G - 0.081 * B + 0.5
+    Cb = -0.169 * R - 0.331 * G + 0.500 * B + 0.5
+    
+    # 将Y, Cr, Cb赋值给输出数组
+    ycrcb_image[:, :, 0] = Y
+    ycrcb_image[:, :, 1] = Cr
+    ycrcb_image[:, :, 2] = Cb
+    
+    # 将值缩放到[0, 255]范围并转换为uint8
+    ycrcb_image = np.clip(ycrcb_image * 255.0, 0, 255).astype(np.uint8)
+    
+    return ycrcb_image
+
+
+def ycrcb_to_rgb(image_array):
+    """
+    将YCrCb图像转换为RGB色彩空间
+    
+    Args:
+        image_array: YCrCb图像的numpy数组，形状为(height, width, channels)
+                    值范围应为[0, 255]
+    
+    Returns:
+        numpy.ndarray: RGB图像的numpy数组，形状为(height, width, channels)
+                      值范围为[0, 255]
+    
+    Raises:
+        ValueError: 当输入图像格式不正确时
+    """
+    # 检查输入格式
+    if not isinstance(image_array, np.ndarray):
+        raise ValueError("输入必须是numpy数组")
+    
+    if len(image_array.shape) != 3 or image_array.shape[2] != 3:
+        raise ValueError("输入必须是YCrCb图像，形状为(H, W, 3)")
+    
+    # 确保值在有效范围内
+    image_array = np.clip(image_array, 0, 255)
+    
+    # 将图像值归一化到[0, 1]范围
+    ycrcb_normalized = image_array / 255.0
+    
+    # 获取图像尺寸
+    height, width = ycrcb_normalized.shape[:2]
+    
+    # 创建输出数组
+    rgb_image = np.zeros_like(ycrcb_normalized)
+    
+    # 使用标准的YCrCb到RGB转换公式
+    # R = Y + 1.402*(Cr-0.5)
+    # G = Y - 0.344*(Cb-0.5) - 0.714*(Cr-0.5)
+    # B = Y + 1.772*(Cb-0.5)
+    
+    # 提取Y, Cr, Cb通道
+    Y = ycrcb_normalized[:, :, 0]
+    Cr = ycrcb_normalized[:, :, 1]
+    Cb = ycrcb_normalized[:, :, 2]
+    
+    # 计算R, G, B通道
+    R = Y + 1.402 * (Cr - 0.5)
+    G = Y - 0.344 * (Cb - 0.5) - 0.714 * (Cr - 0.5)
+    B = Y + 1.772 * (Cb - 0.5)
+    
+    # 将R, G, B赋值给输出数组
+    rgb_image[:, :, 0] = R
+    rgb_image[:, :, 1] = G
+    rgb_image[:, :, 2] = B
+    
+    # 将值缩放到[0, 255]范围并转换为uint8
+    rgb_image = np.clip(rgb_image * 255.0, 0, 255).astype(np.uint8)
+    
+    return rgb_image
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# PART 3: 灰度化处理 -----------------------------------------------------------
+
+
+
 def convert_to_grayscale(image_array):
     """
     将RGB图像转换为灰度图
@@ -107,6 +294,40 @@ def convert_to_grayscale(image_array):
     grayscale = np.dot(image_array[..., :3], [0.299, 0.587, 0.114])
     
     return grayscale.astype(np.uint8)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# PART 4: JSON-numpy数组转换 --------------------------------------------------
+
 
 
 def save_to_json(data, file_path):
@@ -182,51 +403,3 @@ def load_from_json(file_path):
     
     return restore_numpy(data)
 
-
-def load_image_for_jpeg_processing(image_path=None, to_grayscale=None, save_to_file=True):
-    """
-    加载图像并进行JPEG处理前的准备
-    
-    Args:
-        image_path: 图像文件路径，如果为None则使用默认路径
-        to_grayscale: 是否转换为灰度图
-        save_to_file: 是否保存预处理结果到JSON文件
-    
-    Returns:
-        numpy.ndarray: 处理后的图像数据
-    """
-    # 如果未提供路径，使用默认路径
-    if image_path is None:
-        # 获取项目根目录
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        # 构建默认图像路径
-        image_path = os.path.join(project_root, 'data', 'input.jpg')
-    
-    # 读取图像
-    image_array = read_image(image_path)
-    
-    # 转换为灰度图（如果需要）
-    if to_grayscale:
-        image_array = convert_to_grayscale(image_array)
-        # 添加批次维度，方便后续处理
-        image_array = np.expand_dims(image_array, axis=2)
-    
-    # 保存预处理结果到JSON文件
-    if save_to_file:
-        # 获取项目根目录
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        # 构建输出文件路径
-        output_path = os.path.join(project_root, 'temp', 'preprocessed.json')
-        
-        # 准备要保存的数据
-        preprocessed_data = {
-            'image_array': image_array,
-            'shape': image_array.shape,
-            'dtype': str(image_array.dtype),
-            'to_grayscale': to_grayscale
-        }
-        
-        # 保存数据
-        save_to_json(preprocessed_data, output_path)
-    
-    return image_array
