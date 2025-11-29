@@ -8,3 +8,25 @@
 [(0, 0, 0), (0, 0, 0)]
 [(0, 15, 4), (0, 1, 1), (0, 1, 1), (0, -1, 1), (0, -12, 4), (0, 6, 3), (0, 1, 1), (0, -1, 1), (5, -2, 2), (0, 1, 1), (0, 0, 0)]
 [(0, -1, 1), (0, 6, 3), (1, 1, 1), (0, 1, 1), (0, 1, 1), (2, 2, 2), (1, 2, 2), (0, 2, 2), (0, 0, 0)]
+
+
+block_idx = 0
+    for c in range(channel):
+        for i in range(num_blocks_h):
+            for j in range(num_blocks_w):
+                if block_idx >= len(blocks):
+                    break
+                    
+                # 计算块的起始和结束索引
+                h_start = i * block_size
+                h_end = h_start + block_size
+                w_start = j * block_size
+                w_end = w_start + block_size
+                
+                # 放置块
+                if is_grayscale:
+                    reconstructed_image[h_start:h_end, w_start:w_end] = blocks[block_idx]
+                else:
+                    reconstructed_image[h_start:h_end, w_start:w_end, :] = blocks[block_idx]
+                    
+                block_idx += 1

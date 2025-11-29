@@ -179,8 +179,14 @@ def main():
     
     # 计算PSNR（峰值信噪比）评估重建质量
     original_image = image_io.read_image(config.INPUT_IMAGE_PATH)
-    if original_image.ndim == 3:
-        original_image = image_io.convert_to_grayscale(original_image)
+    
+    # 确保两个图像具有相同的色彩空间
+    # 如果重建图像是灰度图像，将原始图像也转换为灰度图像
+    if reconstructed_image.ndim == 2:
+        if original_image.ndim == 3:
+            original_image = image_io.convert_to_grayscale(original_image)
+    # 如果重建图像是彩色图像，保持原始图像为彩色图像
+    # （因为read_image已经将其转换为RGB格式）
     
     # 确保尺寸一致
     if original_image.shape != reconstructed_image.shape:
