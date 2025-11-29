@@ -278,34 +278,47 @@ REV_AC_HUFFMAN_TABLE = {v: k for k, v in AC_HUFFMAN_TABLE.items()}
 
 def int_to_bitstring(value: int, bits: int) -> str:
     """
-    将整数值转换为幅度编码的比特流 (表 4 规则)。
-    正值: 标准二进制。负值: V + (2^bits - 1)。
+    将非零整数值转换为幅度编码的比特流 (Table 4 规则)。
+    要求: value != 0 且 bits > 0。
     """
-    if bits == 0: return ''
-    
-    # 保证输出长度为 bits
+    if bits == 0:
+        if value == 0: 
+            return ''
+        raise ValueError("Size (bits) 为 0 只能对应 Value 0。")
+
     format_str = f'0{bits}b'
     
     if value > 0:
-        # 正值：标准二进制
+        # 正值 (V > 0)：编码是 V 的标准二进制表示。
+        # 范围: [1, 2^bits - 1]
         return format(value, format_str)
-    else:
-        # 负值： raw_val = value + (2^bits - 1)
-        # (1 << bits) 是 2^bits
+    
+    elif value < 0:
+        # 负值 (V < 0)：编码是 V + (2^bits - 1)。
+        # 范围: [-(2^bits - 1), -1]
+        
+        # JPEG编码规则：CodeValue = V + (2^bits - 1)
         raw_val = value + ((1 << bits) - 1) 
         return format(raw_val, format_str)
+        
+    else: # value == 0
+        raise ValueError("非零 Size (bits) 传入了 Value 0。0值应通过 EOB 或 RLE 处理。")
+
 
 def bitstring_to_int(bitstring: str) -> int:
     """将幅度编码的比特流解码回整数值。"""
-    if not bitstring: return 0
+    if not bitstring: 
+        return 0 # 对应 Size=0, Value=0
+        
     val = int(bitstring, 2)
     bits = len(bitstring)
     
-    # 如果 MSB 为 1，它是正值的标准二进制
+    # MSB (最高有效位) 决定正负
     if bitstring[0] == '1': 
+        # MSB=1 对应正值: V = val
         return val
     else: 
-        # 负值解码规则: V = val - (2^bits - 1)
+        # MSB=0 对应负值: V = val - (2^bits - 1)
         return val - ((1 << bits) - 1)
         
 
@@ -318,7 +331,7 @@ def bitstring_to_int(bitstring: str) -> int:
 
 
 # PART 2：行程 位长 Huffman 编解码函数 --------------------------------------------------
-def dc_coder(dc_encoded: DC_Encoded_Info) -> str:
+def dc_encoder(dc_encoded: DC_Encoded_Info) -> str:
     """
     对 DC 系数进行 Huffman 编码。
     返回: 编码后的 DC 比特流
@@ -336,7 +349,7 @@ def dc_coder(dc_encoded: DC_Encoded_Info) -> str:
             dc_stream += int_to_bitstring(dc_val, dc_bits)
     return dc_stream
 
-def ac_coder(ac_rle: AC_RLE_Info) -> str:
+def ac_encoder(ac_rle: AC_RLE_Info) -> str:
     """
     对 AC 系数进行行程编码和 Huffman 编码。
     返回: 编码后的 AC 比特流
@@ -358,7 +371,92 @@ def ac_coder(ac_rle: AC_RLE_Info) -> str:
             
     return ac_stream
 
+def dc_decoder(bitstream: str, pos: int, ) -> Tuple[DC_Encoded_Info, int]:
+    """
+    解码单个 DC 系数 (Category Code + Amplitude Code)。
+    
+    返回: ((dc_size, dc_value), new_pos)
+    """
+    # 查找 DC Category 码字
+    key, new_pos = huffman_scan(bitstream, pos, type='dc')
+        
+    dc_size = key
+    dc_value = 0
+    
+    # 解码 DC Amplitude
+    if dc_size > 0:
+        amplitude_str = bitstream[new_pos : new_pos + dc_size]
+        if len(amplitude_str) < dc_size:
+            raise ValueError("比特流不足以容纳 DC 幅度码。")
+            
+        dc_value = bitstring_to_int(amplitude_str)
+        new_pos += dc_size
+        
+    return (dc_size, dc_value), new_pos
 
+
+def ac_decoder(bitstream: str, pos: int, ) -> Tuple[AC_RLE_Info, int]:
+    """
+    解码单个块中所有 AC 系数 (RLE/Size Code + Amplitude Code)，直到遇到 EOB。
+    
+    返回: (ac_block_rle, new_pos)
+    """
+    ac_block_rle: AC_RLE_Info = []
+    current_pos = pos
+    
+    while True:
+        # 查找 AC RLE/SIZE 码字
+        key, current_pos = huffman_scan(bitstream, current_pos, type='ac')
+        
+        run_len, ac_size = key
+        
+        # EOB 检查
+        if key == (0, 0):
+            ac_block_rle.append((0, 0, 0)) # EOB 结构
+            break
+        
+        ac_value = 0
+        # 解码 AC Amplitude
+        if ac_size > 0:
+            amplitude_str = bitstream[current_pos : current_pos + ac_size]
+            if len(amplitude_str) < ac_size:
+                 raise ValueError("比特流不足以容纳 AC 幅度码。")
+            
+            ac_value = bitstring_to_int(amplitude_str)
+            current_pos += ac_size
+            
+        ac_block_rle.append((run_len, ac_value, ac_size))
+        
+        # ZRL (15, 0) 是特殊情况，它不后跟幅度，并且循环继续
+        # 其他 RUN/SIZE 键则编码一个非零 AC 系数
+        
+    return ac_block_rle, current_pos
+
+def huffman_scan(bitstream: str, pos: int, type: str) -> Tuple[Tuple[int, int], int, int]:
+    """
+    从比特流中解码下一个 Huffman 码字。
+    
+    返回: (huffman_key, code_len, new_pos)
+    """
+    code = ""
+    if type == 'dc':
+        while pos < len(bitstream):
+            code += bitstream[pos]
+            pos += 1
+            if code in REV_DC_HUFFMAN_TABLE:
+                key = REV_DC_HUFFMAN_TABLE[code]
+                return key, pos
+    elif type == 'ac':
+        while pos < len(bitstream):
+            code += bitstream[pos]
+            pos += 1
+            if code in REV_AC_HUFFMAN_TABLE:
+                key = REV_AC_HUFFMAN_TABLE[code]
+                return key, pos
+    else:
+        raise ValueError("类型必须是 'dc' 或 'ac'。")
+    
+    raise ValueError("比特流不足以容纳完整的 Huffman 码字。")
 
 
 
@@ -394,10 +492,10 @@ def encode_and_merge_blocks(
     
     for i in range(len(dc_info_list)):
         # 1. 编码 DC
-        dc_stream = dc_coder([dc_info_list[i]])
+        dc_stream = dc_encoder([dc_info_list[i]])
             
         # 2. 编码 AC
-        ac_stream = ac_coder(ac_rle_list[i])
+        ac_stream = ac_encoder(ac_rle_list[i])
                 
         # 3. 合并: DC 紧接 AC
         final_bitstream += dc_stream
@@ -405,27 +503,9 @@ def encode_and_merge_blocks(
         
     return final_bitstream
 
-def huffman_decode_next(bitstream: str, pos: int, rev_table: Dict[str, Tuple[int, int]]) -> Tuple[Tuple[int, int], int, int]:
+def decode_and_separate_blocks(bitstream: str, ) -> Tuple[List[DC_Encoded_Info], List[List[AC_RLE_Info]]]:
     """
-    从比特流中查找下一个哈夫曼码字。
-    返回: (key, code_len, pos_next)
-    """
-    # 查找最长码字长度
-    max_len = max(len(code) for code in rev_table) if rev_table else 16
-    
-    for l in range(1, max_len + 1):
-        if pos + l > len(bitstream):
-            break
-        code = bitstream[pos : pos + l]
-        if code in rev_table:
-            key = rev_table[code]
-            return key, l, pos + l
-            
-    raise ValueError(f"在位置 {pos} 无法找到有效的哈夫曼码字。")
-
-def decode_and_separate_blocks(bitstream: str) -> Tuple[List[DC_Encoded_Info], List[List[AC_RLE_Info]]]:
-    """
-    解码并分离出 DC 和 AC 编码信息。
+    主解码函数：遍历比特流，依次调用 DC 和 AC 解码器。
     """
     pos = 0
     dc_decoded_list: List[DC_Decoded_Info] = []
@@ -433,44 +513,13 @@ def decode_and_separate_blocks(bitstream: str) -> Tuple[List[DC_Encoded_Info], L
     
     while pos < len(bitstream):
         
-        # --- 1. 解码 DC ---
-        key, code_len, pos = huffman_decode_next(bitstream, pos, REV_DC_HUFFMAN_TABLE)
+        # 1. 解码 DC
+        dc_info, pos = dc_decoder(bitstream, pos)
+        dc_decoded_list.append(dc_info)
         
-        if key[0] != 0:
-            raise ValueError(f"解码错误：块必须以 DC 编码开始，在位置 {pos - code_len} 找到了 AC 键 {key}。")
-            
-        dc_size = key[1]
-        dc_value = 0
-        
-        # 解码 DC Amplitude
-        if dc_size > 0:
-            dc_value = bitstring_to_int(bitstream[pos : pos + dc_size])
-            pos += dc_size
-            
-        dc_decoded_list.append((dc_size, dc_value))
-        
-        # --- 2. 解码 AC ---
-        ac_block_rle: List[AC_RLE_Info] = []
-        
-        while True:
-            key, code_len, pos = huffman_decode_next(bitstream, pos, REV_HUFFMAN_TABLE)
-            
-            run_len, ac_size = key
-            
-            # EOB 检查
-            if key == (0, 0):
-                ac_block_rle.append((0, 0, 0)) # EOB 结构
-                break
-            
-            ac_value = 0
-            # 解码 AC Amplitude
-            if ac_size > 0:
-                ac_value = bitstring_to_int(bitstream[pos : pos + ac_size])
-                pos += ac_size
-                
-            ac_block_rle.append((run_len, ac_value, ac_size))
-            
-        ac_decoded_list.append(ac_block_rle)
+        # 2. 解码 AC
+        ac_rle_list, pos = ac_decoder(bitstream, pos)
+        ac_decoded_list.append(ac_rle_list)
         
     return dc_decoded_list, ac_decoded_list
 
@@ -522,7 +571,7 @@ if __name__ == '__main__':
         # 块 0
         [(0, 5, 3), (1, -10, 4), (0, 0, 0)],
         # 块 1
-        [(12, 1, 3), (0, 0, 0)], 
+        [(12, 1, 1), (0, 0, 0)], 
         # 块 2 (两个 ZRL 示例 + EOB)
         [(15, 0, 0), (15, 0, 0), (0, 0, 0)]
     ]

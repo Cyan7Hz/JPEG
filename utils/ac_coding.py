@@ -117,10 +117,8 @@ def run_length_decode(rle_result: List[Tuple[int, int, int]]) -> List[int]:
         
     return zigzag
 
-# PART 4：熵编解码组件 -------------------------------------------------------------
-# 注意：熵编码函数已移至coder.py模块
 
-# PART 5：任务分发组件 -------------------------------------------------------------
+# PART 4：任务分发组件 -------------------------------------------------------------
 def encode_ac_coefficients(quantized_blocks: List[np.ndarray]) -> List[str]:
     """
     对AC系数进行编码
