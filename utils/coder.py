@@ -1,6 +1,6 @@
 import sys
 from typing import List, Tuple, Dict, Any
-
+import numpy as np
 
 
 # --- 类型定义 ---
@@ -82,12 +82,12 @@ AC_HUFFMAN_TABLE: Dict[Tuple[int, int], str] = {
     (2, 2): '11111001',
     (2, 3): '1111110111',
     (2, 4): '111111110100',
-    (2, 5): '111111111001001',
-    (2, 6): '111111111001010',
-    (2, 7): '111111111001011',
-    (2, 8): '111111111001100',
-    (2, 9): '111111111001101',
-    (2, 10): '111111111001110', # A = 10
+    (2, 5): '1111111110001001',
+    (2, 6): '1111111110001010',
+    (2, 7): '1111111110001011',
+    (2, 8): '1111111110001100',
+    (2, 9): '1111111110001101',
+    (2, 10): '1111111110001110', # A = 10
     
     # RUN=3
     (3, 1): '111010',
@@ -403,8 +403,11 @@ def ac_decoder(bitstream: str, pos: int, ) -> Tuple[AC_RLE_Info, int]:
     """
     ac_block_rle: AC_RLE_Info = []
     current_pos = pos
-    
+    count = 0
+
     while True:
+        if count >= 63:
+            break
         # 查找 AC RLE/SIZE 码字
         key, current_pos = huffman_scan(bitstream, current_pos, type='ac')
         
@@ -426,7 +429,7 @@ def ac_decoder(bitstream: str, pos: int, ) -> Tuple[AC_RLE_Info, int]:
             current_pos += ac_size
             
         ac_block_rle.append((run_len, ac_value, ac_size))
-        
+        count += (run_len + 1)
         # ZRL (15, 0) 是特殊情况，它不后跟幅度，并且循环继续
         # 其他 RUN/SIZE 键则编码一个非零 AC 系数
         
@@ -449,6 +452,8 @@ def huffman_scan(bitstream: str, pos: int, type: str) -> Tuple[Tuple[int, int], 
     elif type == 'ac':
         while pos < len(bitstream):
             code += bitstream[pos]
+            if len(code) > 16:
+                print('error')
             pos += 1
             if code in REV_AC_HUFFMAN_TABLE:
                 key = REV_AC_HUFFMAN_TABLE[code]
@@ -478,7 +483,7 @@ def huffman_scan(bitstream: str, pos: int, type: str) -> Tuple[Tuple[int, int], 
 
 # PART 3：任务分发模块 -------------------------------------------------------------
 
-def encode_and_merge_blocks(
+def encode_acdc2bits(
     dc_info_list: List[DC_Encoded_Info], 
     ac_rle_list: List[List[AC_RLE_Info]]
 ) -> str:
@@ -491,6 +496,8 @@ def encode_and_merge_blocks(
     final_bitstream = ""
     
     for i in range(len(dc_info_list)):
+        if i == 1081:
+            print('!')
         # 1. 编码 DC
         dc_stream = dc_encoder([dc_info_list[i]])
             
@@ -503,7 +510,7 @@ def encode_and_merge_blocks(
         
     return final_bitstream
 
-def decode_and_separate_blocks(bitstream: str, ) -> Tuple[List[DC_Encoded_Info], List[List[AC_RLE_Info]]]:
+def decode_bits2acdc(bitstream: str, ) -> Tuple[List[DC_Encoded_Info], List[List[AC_RLE_Info]]]:
     """
     主解码函数：遍历比特流，依次调用 DC 和 AC 解码器。
     """
@@ -512,7 +519,8 @@ def decode_and_separate_blocks(bitstream: str, ) -> Tuple[List[DC_Encoded_Info],
     ac_decoded_list: List[List[AC_RLE_Info]] = []
     
     while pos < len(bitstream):
-        
+        if len(dc_decoded_list) == 1081:
+            print('!')
         # 1. 解码 DC
         dc_info, pos = dc_decoder(bitstream, pos)
         dc_decoded_list.append(dc_info)
@@ -523,7 +531,33 @@ def decode_and_separate_blocks(bitstream: str, ) -> Tuple[List[DC_Encoded_Info],
         
     return dc_decoded_list, ac_decoded_list
 
-
+def decode_acdc2blocks(
+    dc_info_list: List[Tuple[int, int]], 
+    ac_rle_list: List[List[Tuple[int, int, int]]]
+) -> List[np.ndarray]:
+    """
+    将 DC 和 AC 解码信息转换为 DCT 块。
+    """
+    if len(dc_info_list) != len(ac_rle_list):
+        raise ValueError("DC 和 AC 块的数量必须匹配。")
+        
+    reconstructed_blocks: List[np.ndarray] = []
+    
+    for i in range(len(dc_info_list)):
+        # 1. 解码 DC
+        dc_size, dc_value = dc_info_list[i]
+        
+        # 2. 解码 AC
+        ac_rle_list = ac_rle_list[i]
+        
+        # 3. 合并 DC 和 AC 系数
+        block = dc_coding.reconstruct_block_with_dc(
+            dc_size, dc_value, ac_rle_list
+        )
+        
+        reconstructed_blocks.append(block)
+        
+    return reconstructed_blocks
 
 
 
@@ -569,17 +603,17 @@ if __name__ == '__main__':
     # 假设 AC RLE 编码信息：[ [(Run, Value, Size), ...], ...]
     AC_RLE: List[List[AC_RLE_Info]] = [
         # 块 0
-        [(0, 5, 3), (1, -10, 4), (0, 0, 0)],
+        [(0, 5, 3), (1, -10, 4), (15, 1, 1), (15, 1, 1), (15, -1, 1), (13, 2, 2)],
         # 块 1
         [(12, 1, 1), (0, 0, 0)], 
         # 块 2 (两个 ZRL 示例 + EOB)
-        [(15, 0, 0), (15, 0, 0), (0, 0, 0)]
+        [(0, 0, 0)]
     ]
 
     print("--- JPEG 熵编解码模块验证 ---")
     
     # 1. 编码和合并
-    merged_bitstream = encode_and_merge_blocks(DC_INFO, AC_RLE)
+    merged_bitstream = encode_acdc2bits(DC_INFO, AC_RLE)
     
     print("\n✅ 编码和合并完成。")
     print(f"   合并比特流长度: {len(merged_bitstream)}")
@@ -587,7 +621,7 @@ if __name__ == '__main__':
 
     # 2. 解码和分离
     try:
-        decoded_dc, decoded_ac = decode_and_separate_blocks(merged_bitstream)
+        decoded_dc, decoded_ac = decode_bits2acdc(merged_bitstream)
 
         # 3. 验证数据是否一致
         print("\n--- 解码结果验证 ---")

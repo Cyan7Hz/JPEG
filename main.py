@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from utils import image_io, block_processing, dct_transform, quantization, dc_coding, ac_coding
+from utils import image_io, block_processing, dct_transform, quantization, dc_coding, ac_coding, coder
 import config
 
 
@@ -24,13 +24,15 @@ def encode_image(image_path: str) -> dict:
         'width': image_width,
         'channels': image_channels,
         'block_size': config.BLOCK_SIZE,
-        'quality_factor': config.QUALITY_FACTOR
+        'quality_factor': config.QUALITY_FACTOR,
+        'quan_mode': config.QUANTIZATION_MODE,
+        'quan_tables': [],
+        'bit_stream': ''
     }
     
     # 2. 图像分块
     print("图像分块...")
-    blocks, pad_info = block_processing.split_image_into_blocks(image, config.BLOCK_SIZE)
-    metadata['pad_info'] = pad_info
+    blocks = block_processing.split_image_into_blocks(image, config.BLOCK_SIZE)
     
     # 保存分块结果（根据配置）
     if config.SAVE_INTERMEDIATE_RESULTS['blocks']:
@@ -54,7 +56,7 @@ def encode_image(image_path: str) -> dict:
     quantized_blocks, quant_tables = quantization.quantize_blocks(
         dct_blocks, config.QUALITY_FACTOR, config.QUANTIZATION_MODE
     )
-    metadata['quantization_tables'] = [table.tolist() for table in quant_tables]
+    metadata['quan_tables'] = [table.tolist() for table in quant_tables]
     
     # 保存量化系数（根据配置）
     if config.SAVE_INTERMEDIATE_RESULTS['quantized_coeffs']:
@@ -74,7 +76,7 @@ def encode_image(image_path: str) -> dict:
     
     # 保存DC编码结果（根据配置）
     if config.SAVE_INTERMEDIATE_RESULTS['dc_encoded']:
-        dc_coding.save_dc_encoded(dc_encoded, dc_metadata, config.DC_ENCODED_FILE)
+        dc_coding.save_dc_encoded(dc_encoded, config.DC_ENCODED_FILE)
         print(f"DC编码结果已保存到: {config.DC_ENCODED_FILE}")
     
     # 7. AC系数熵编码
@@ -83,15 +85,14 @@ def encode_image(image_path: str) -> dict:
     
     # 保存AC熵编码结果（根据配置）
     if config.SAVE_INTERMEDIATE_RESULTS['ac_encoded']:
-        with open(config.AC_ENCODED_FILE, 'w') as f:
-            # 为了简化，这里以文本形式保存位串
-            for bitstring in encoded_ac_data:
-                f.write(bitstring + '\n')
+        ac_coding.save_ac_encoded(ac_encoded, config.AC_ENCODED_FILE)
         print(f"AC熵编码结果已保存到: {config.AC_ENCODED_FILE}")
     
     # 8. ACDC 二进制编码
     print("对DC,AC系数进行二进制编码...")
-    final_bitstream = coder.encode_and_merge_blocks(dc_encoded, ac_encoded)
+    final_bitstream = coder.encode_acdc2bits(dc_encoded, ac_encoded)
+    metadata['bit_stream'] = final_bitstream
+    print(f"最终比特流长度: {len(final_bitstream)}")
     print("=== 图像编码完成 ===")
     return metadata
 
@@ -99,46 +100,30 @@ def encode_image(image_path: str) -> dict:
 def decode_image(metadata: dict) -> np.ndarray:
     """图像解码流程"""
     print("\n=== 开始图像解码 ===")
+    # 1. 提取比特流
+    bitstream = metadata.get('bit_stream')
+    print(f"比特流长度: {len(bitstream)}")
+    if not bitstream:
+        raise ValueError("Metadata 中缺少 'bit_stream' 字段或比特流为空。")
     
-    # 1. 读取DC编码结果并解码
-    print("解码DC系数...")
-    dc_encoded, _ = dc_coding.load_dc_encoded(config.DC_ENCODED_FILE)
-    dc_coefficients = dc_coding.decode_dc_coefficients(dc_encoded)
-    
-    # 保存DC解码结果（根据配置）
-    if config.SAVE_INTERMEDIATE_RESULTS['dc_decoded']:
-        dc_coding.save_dc_decoded(dc_coefficients, {}, config.DC_DECODED_FILE)
-        print(f"DC解码结果已保存到: {config.DC_DECODED_FILE}")
-    
-    # 2. 读取AC熵编码结果并解码
-    print("解码AC系数...")
-    decoded_ac_blocks = []
-    
-    # 读取编码的AC数据
-    with open(config.AC_ENCODED_FILE, 'r') as f:
-        encoded_ac_data = [line.strip() for line in f]
-    
-    for bitstring in encoded_ac_data:
-        # 熵解码
-        decoded_rle = ac_coding.entropy_decode(bitstring)
-        # 游程解码
-        decoded_zigzag = ac_coding.run_length_decode(decoded_rle)
-        # 逆Z字形扫描
-        ac_block = ac_coding.inverse_zigzag_scan(decoded_zigzag)
-        decoded_ac_blocks.append(ac_block)
-    
-    # 保存AC解码结果（根据配置）
+    # 2. 二进制解码
+    print("对DC,AC系数进行二进制解码...")
+    dc_decoded, ac_decoded = coder.decode_bits2acdc(bitstream)
+
+
     if config.SAVE_INTERMEDIATE_RESULTS['ac_decoded']:
-        image_io.save_to_json({
-            'ac_blocks': [block.tolist() for block in decoded_ac_blocks],
-            'metadata': metadata
-        }, config.AC_DECODED_FILE)
+        ac_coding.save_ac_encoded(ac_decoded, config.AC_DECODED_FILE)
         print(f"AC解码结果已保存到: {config.AC_DECODED_FILE}")
+
+    if config.SAVE_INTERMEDIATE_RESULTS['dc_decoded']:
+        dc_coding.save_dc_encoded(dc_decoded, config.DC_DECODED_FILE)
+        print(f"DC解码结果已保存到: {config.DC_DECODED_FILE}")
     
     # 3. 重建完整的DCT块（合并DC和AC）
     print("重建DCT块...")
-    reconstructed_blocks = dc_coding.reconstruct_blocks_with_dc(
-        decoded_ac_blocks, dc_coefficients
+    ac_blocks = ac_coding.decode_ac2blocks(ac_decoded)
+    reconstructed_blocks = dc_coding.decode_dc2blocks(
+        ac_blocks, dc_decoded  
     )
     
     # 保存重建块（根据配置）
@@ -151,7 +136,7 @@ def decode_image(metadata: dict) -> np.ndarray:
     
     # 4. 逆量化
     print("执行逆量化...")
-    quant_tables = [np.array(table, dtype=np.float64) for table in metadata['quantization_tables']]
+    quant_tables = [np.array(table, dtype=np.float64) for table in metadata['quan_tables']]
     # 获取通道数，从分块信息中推断
     channels = 3  # 默认为3通道彩色图像
     if 'channels' in metadata:
@@ -168,13 +153,13 @@ def decode_image(metadata: dict) -> np.ndarray:
     
     # 6. 重建图像
     print("重建图像...")
-    image_height = metadata['height']
-    image_width = metadata['width']
-    pad_info = metadata['pad_info']
-    
     reconstructed_image = block_processing.reconstruct_image_from_blocks(
-        idct_blocks, image_height, image_width, config.BLOCK_SIZE, pad_info
+        idct_blocks, metadata
     )
+    
+    # 7. 将 YCbCr 转换为 RGB
+    print("将 YCbCr 转换为 RGB...")
+    reconstructed_image = image_io.ycrcb_to_rgb(reconstructed_image)
     
     print("=== 图像解码完成 ===")
     return reconstructed_image

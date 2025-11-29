@@ -203,7 +203,7 @@ def decode_dc_coefficients(dc_encoded: List[Tuple[int, int]]) -> List[int]:
 
 
 # PART 4：Block 重建组件 -------------------------------------------------------------
-def reconstruct_blocks_with_dc(ac_blocks: List[np.ndarray], dc_coefficients: List[int]) -> List[np.ndarray]:
+def decode_dc2blocks(ac_blocks: List[np.ndarray], dc_encoded: List[Tuple[int, int]]) -> List[np.ndarray]:
     """
     将解码后的DC系数放回到块中
     
@@ -214,9 +214,10 @@ def reconstruct_blocks_with_dc(ac_blocks: List[np.ndarray], dc_coefficients: Lis
     Returns:
         reconstructed_blocks: 包含正确DC和AC系数的完整块列表
     """
-    if len(ac_blocks) != len(dc_coefficients):
+    if len(ac_blocks) != len(dc_encoded):
         raise ValueError(f"块数量({len(ac_blocks)})与DC系数数量({len(dc_coefficients)})不匹配")
     
+    dc_coefficients = decode_dc_coefficients(dc_encoded)
     reconstructed_blocks = []
     for i, block in enumerate(ac_blocks):
         # 创建块的副本以避免修改原始数据
@@ -281,7 +282,7 @@ def separate_dc_and_ac(quantized_blocks: List[np.ndarray]) -> Tuple[List[int], L
 
 
 # PART 5：文件操作组件 -------------------------------------------------------------
-def save_dc_encoded(dc_encoded: List[Tuple[int, int]], metadata: Dict[str, Any], file_path: str) -> None:
+def save_dc_encoded(dc_encoded: List[Tuple[int, int]], file_path: str) -> None:
     """
     保存DC编码结果到JSON文件
     
@@ -299,7 +300,6 @@ def save_dc_encoded(dc_encoded: List[Tuple[int, int]], metadata: Dict[str, Any],
         
         save_data = {
             'dc_encoded': encoded_data,
-            'metadata': metadata
         }
         
         # 确保输出目录存在
@@ -342,56 +342,8 @@ def load_dc_encoded(file_path: str) -> Tuple[List[Tuple[int, int]], Dict[str, An
         raise
 
 
-def save_dc_decoded(dc_coefficients: List[int], metadata: Dict[str, Any], file_path: str) -> None:
-    """
-    保存DC解码结果到JSON文件
-    
-    Args:
-        dc_coefficients: 解码后的DC系数列表
-        metadata: 元数据字典
-        file_path: 输出文件路径
-    """
-    try:
-        save_data = {
-            'dc_coefficients': dc_coefficients,
-            'metadata': metadata
-        }
-        
-        # 确保输出目录存在
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        
-        # 保存到JSON文件
-        with open(file_path, 'w') as f:
-            json.dump(save_data, f, indent=2)
-            
-        print(f"DC解码结果已保存到: {file_path}")
-    except Exception as e:
-        print(f"保存DC解码结果失败: {e}")
-        raise
 
 
-def load_dc_decoded(file_path: str) -> Tuple[List[int], Dict[str, Any]]:
-    """
-    从JSON文件加载DC解码结果
-    
-    Args:
-        file_path: 输入文件路径
-        
-    Returns:
-        dc_coefficients: 解码后的DC系数列表
-        metadata: 元数据字典
-    """
-    try:
-        with open(file_path, 'r') as f:
-            data = json.load(f)
-        
-        dc_coefficients = data['dc_coefficients']
-        metadata = data['metadata'] if 'metadata' in data else {}
-        
-        return dc_coefficients, metadata
-    except Exception as e:
-        print(f"加载DC解码结果失败: {e}")
-        raise
 
 
 def main() -> None:

@@ -72,84 +72,82 @@ def split_image_into_blocks(image_array, block_size=8):
     print(f"图像分割完成: {num_blocks_h}x{num_blocks_w}个{block_size}x{block_size}块")
     print(f"原始尺寸: {original_shape}，填充后尺寸: {padded_shape}")
     
-    pad_info = {
-        'original_shape': original_shape,
-        'padded_shape': padded_shape,
-        'num_blocks_h': num_blocks_h,
-        'num_blocks_w': num_blocks_w
-    }
-    return blocks, pad_info
+    return blocks
 
 
-def reconstruct_image_from_blocks(blocks, pad_info):
+from typing import Dict, Any, List # 导入类型提示，使代码更清晰
+
+def reconstruct_image_from_blocks(blocks: np.ndarray, metadata: Dict[str, Any]) -> np.ndarray:
     """
-    将块重新组合成完整图像
+    将块重新组合成完整图像，并裁剪掉填充部分。
     
     Args:
-        blocks: numpy数组，格式为(channels, num_blocks_h, num_blocks_w, block_size, block_size)
-        pad_info: 包含填充信息的字典
+        blocks: numpy数组块的列表，每个块形状为(block_size, block_size)或(block_size, block_size, channels)
+        metadata: 包含原始图像尺寸和填充信息的字典。
     
     Returns:
-        numpy.ndarray: 重建的图像，格式与原始图像相同
+        numpy.ndarray: 重建的图像，格式为(height, width, channels)或(height, width)。
     """
-    # 从填充信息中获取必要参数
-    original_shape = pad_info['original_shape']
-    padded_shape = pad_info['padded_shape']
-    num_blocks_h = pad_info['num_blocks_h']
-    num_blocks_w = pad_info['num_blocks_w']
+    # 1. 从 metadata 中获取必要参数
+    ori_height = metadata['height']  # 原始高度
+    ori_width = metadata['width']    # 原始宽度
+    block_size = metadata['block_size']  # 块大小 (e.g., 8)
     
-    # 获取块的维度信息
-    if len(blocks.shape) == 4:
-        # 灰度图（没有通道维度）
-        _, block_size, _, _ = blocks.shape
+    # 2. 确定块的格式（灰度图还是彩色图）
+    sample_block = blocks[0]  # 取第一个块作为样本
+    if len(sample_block.shape) == 2:
+        # 灰度图块 (block_size, block_size)
+        is_grayscale = True
         channels = 1
     else:
-        # 彩色图
-        channels, _, _, block_size, _ = blocks.shape
+        # 彩色图块 (block_size, block_size, channels)
+        is_grayscale = False
+        channels = sample_block.shape[2]
     
-    # 计算重建图像的尺寸
+    # 3. 计算需要的块数量（向上取整以确保覆盖整个图像）
+    num_blocks_h = (ori_height + block_size - 1) // block_size  # 等价于向上取整
+    num_blocks_w = (ori_width + block_size - 1) // block_size
+    
+    # 实际上，我们可以通过blocks列表的长度来推断块的排列
+    # 但在不知道具体的排列方式时，我们需要根据图像尺寸计算
+    
+    # 4. 计算重建图像的完整尺寸（包含填充）
     reconstructed_height = num_blocks_h * block_size
     reconstructed_width = num_blocks_w * block_size
     
-    # 创建重建图像数组
-    if channels == 1:
+    # 5. 创建重建图像数组
+    if is_grayscale:
         reconstructed_image = np.zeros((reconstructed_height, reconstructed_width), 
-                                      dtype=blocks.dtype)
-        # 将块放置到重建图像中
-        for i in range(num_blocks_h):
-            for j in range(num_blocks_w):
-                # 计算块的起始和结束索引
-                h_start = i * block_size
-                h_end = h_start + block_size
-                w_start = j * block_size
-                w_end = w_start + block_size
-                
-                # 放置块
-                reconstructed_image[h_start:h_end, w_start:w_end] = blocks[i, j]
+                                     dtype=sample_block.dtype)
     else:
         reconstructed_image = np.zeros((reconstructed_height, reconstructed_width, channels), 
-                                      dtype=blocks.dtype)
-        # 将块放置到重建图像中
-        for c in range(channels):
-            for i in range(num_blocks_h):
-                for j in range(num_blocks_w):
-                    # 计算块的起始和结束索引
-                    h_start = i * block_size
-                    h_end = h_start + block_size
-                    w_start = j * block_size
-                    w_end = w_start + block_size
-                    
-                    # 放置块
-                    reconstructed_image[h_start:h_end, w_start:w_end, c] = blocks[c, i, j]
+                                     dtype=sample_block.dtype)
     
-    # 裁剪到原始图像尺寸
-    if len(original_shape) == 2:
-        # 灰度图
-        reconstructed_image = reconstructed_image[:original_shape[0], :original_shape[1]]
+    # 6. 将块放置到重建图像中
+    block_idx = 0
+    for i in range(num_blocks_h):
+        for j in range(num_blocks_w):
+            if block_idx >= len(blocks):
+                break
+                
+            # 计算块的起始和结束索引
+            h_start = i * block_size
+            h_end = h_start + block_size
+            w_start = j * block_size
+            w_end = w_start + block_size
+            
+            # 放置块
+            if is_grayscale:
+                reconstructed_image[h_start:h_end, w_start:w_end] = blocks[block_idx]
+            else:
+                reconstructed_image[h_start:h_end, w_start:w_end, :] = blocks[block_idx]
+                
+            block_idx += 1
+    
+    # 7. 裁剪到原始图像尺寸，去除填充部分
+    if is_grayscale:
+        final_image = reconstructed_image[:ori_height, :ori_width]
     else:
-        # 彩色图
-        reconstructed_image = reconstructed_image[:original_shape[0], :original_shape[1], :]
+        final_image = reconstructed_image[:ori_height, :ori_width, :]
     
-    print(f"图像重建完成，恢复到原始尺寸: {original_shape}")
-    
-    return reconstructed_image
+    return final_image
