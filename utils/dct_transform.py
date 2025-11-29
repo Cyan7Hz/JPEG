@@ -72,59 +72,133 @@ def apply_idct_to_block(dct_block: np.ndarray, basis: np.ndarray = None) -> np.n
     return block
 
 
-def perform_dct_on_blocks(blocks: List[np.ndarray], normalize: bool = True) -> List[np.ndarray]:
+def perform_dct_on_blocks(blocks, normalize: bool = True):
     """
     对一组图像块执行DCT变换
     
     Args:
-        blocks: 图像块列表，每个块形状为(8, 8)
+        blocks: 图像块，可以是以下两种格式之一：
+                1. 列表格式：图像块列表，每个块形状为(8, 8)
+                2. 数组格式：numpy数组，形状为(channels, num_blocks_h, num_blocks_w, block_size, block_size)
         normalize: 是否对输入数据进行归一化（减去128）
         
     Returns:
-        dct_blocks: DCT变换后的系数块列表
+        dct_blocks: DCT变换后的系数块，格式与输入相同
     """
-    dct_blocks = []
     basis = compute_dct_basis(8)
     
-    for block in blocks:
-        # 归一化：减去128以将像素值范围从[0, 255]转为[-128, 127]
-        if normalize:
-            block = block - 128.0
+    # 检查输入类型
+    if isinstance(blocks, list):
+        # 原始列表格式处理
+        dct_blocks = []
+        for block in blocks:
+            # 归一化：减去128以将像素值范围从[0, 255]转为[-128, 127]
+            if normalize:
+                block = block - 128.0
+            
+            # 应用DCT
+            dct_block = apply_dct_to_block(block, basis)
+            dct_blocks.append(dct_block)
         
-        # 应用DCT
-        dct_block = apply_dct_to_block(block, basis)
-        dct_blocks.append(dct_block)
-    
-    return dct_blocks
+        return dct_blocks
+    else:
+        # 新的数组格式处理 (channels, num_blocks_h, num_blocks_w, block_size, block_size)
+        # 检查输入形状
+        if len(blocks.shape) != 5:
+            raise ValueError(f"输入块组必须是5维数组，当前形状: {blocks.shape}")
+        
+        channels, num_blocks_h, num_blocks_w, block_size_h, block_size_w = blocks.shape
+        
+        # 检查块大小是否为8x8
+        if block_size_h != 8 or block_size_w != 8:
+            raise ValueError(f"输入块必须是8x8大小，当前形状: {blocks.shape}")
+        
+        # 初始化输出数组
+        dct_blocks = np.zeros_like(blocks, dtype=np.float64)
+        
+        # 对每个通道的每个块应用DCT
+        for c in range(channels):
+            for i in range(num_blocks_h):
+                for j in range(num_blocks_w):
+                    # 获取当前块
+                    block = blocks[c, i, j]
+                    
+                    # 归一化：减去128以将像素值范围从[0, 255]转为[-128, 127]
+                    if normalize:
+                        block = block - 128.0
+                    
+                    # 应用DCT
+                    dct_blocks[c, i, j] = apply_dct_to_block(block, basis)
+        
+        return dct_blocks
 
 
-def perform_idct_on_blocks(dct_blocks: List[np.ndarray], normalize: bool = True) -> List[np.ndarray]:
+def perform_idct_on_blocks(dct_blocks, normalize: bool = True):
     """
     对一组DCT系数块执行IDCT变换
     
     Args:
-        dct_blocks: DCT系数块列表，每个块形状为(8, 8)
+        dct_blocks: DCT系数块，可以是以下两种格式之一：
+                   1. 列表格式：DCT系数块列表，每个块形状为(8, 8)
+                   2. 数组格式：numpy数组，形状为(channels, num_blocks_h, num_blocks_w, block_size, block_size)
         normalize: 是否对输出数据进行反归一化（加上128）
         
     Returns:
-        blocks: IDCT变换后的图像块列表
+        blocks: IDCT变换后的图像块，格式与输入相同
     """
-    blocks = []
     basis = compute_dct_basis(8)
     
-    for dct_block in dct_blocks:
-        # 应用IDCT
-        block = apply_idct_to_block(dct_block, basis)
+    # 检查输入类型
+    if isinstance(dct_blocks, list):
+        # 原始列表格式处理
+        blocks = []
+        for dct_block in dct_blocks:
+            # 应用IDCT
+            block = apply_idct_to_block(dct_block, basis)
+            
+            # 反归一化：加上128
+            if normalize:
+                block = block + 128.0
+                # 确保像素值在有效范围内[0, 255]
+                block = np.clip(block, 0, 255)
+            
+            blocks.append(block)
         
-        # 反归一化：加上128
-        if normalize:
-            block = block + 128.0
-            # 确保像素值在有效范围内[0, 255]
-            block = np.clip(block, 0, 255)
+        return blocks
+    else:
+        # 新的数组格式处理 (channels, num_blocks_h, num_blocks_w, block_size, block_size)
+        # 检查输入形状
+        if len(dct_blocks.shape) != 5:
+            raise ValueError(f"输入DCT块组必须是5维数组，当前形状: {dct_blocks.shape}")
         
-        blocks.append(block)
-    
-    return blocks
+        channels, num_blocks_h, num_blocks_w, block_size_h, block_size_w = dct_blocks.shape
+        
+        # 检查块大小是否为8x8
+        if block_size_h != 8 or block_size_w != 8:
+            raise ValueError(f"输入DCT块必须是8x8大小，当前形状: {dct_blocks.shape}")
+        
+        # 初始化输出数组
+        blocks = np.zeros_like(dct_blocks, dtype=np.float64)
+        
+        # 对每个通道的每个块应用IDCT
+        for c in range(channels):
+            for i in range(num_blocks_h):
+                for j in range(num_blocks_w):
+                    # 获取当前DCT块
+                    dct_block = dct_blocks[c, i, j]
+                    
+                    # 应用IDCT
+                    block = apply_idct_to_block(dct_block, basis)
+                    
+                    # 反归一化：加上128
+                    if normalize:
+                        block = block + 128.0
+                        # 确保像素值在有效范围内[0, 255]
+                        block = np.clip(block, 0, 255)
+                    
+                    blocks[c, i, j] = block
+        
+        return blocks
 
 
 def load_blocks_from_json(file_path: str) -> Tuple[List[np.ndarray], dict]:
