@@ -4,10 +4,10 @@ import os
 import struct
 from typing import List, Tuple, Dict, Any, Optional
 
-# --- 1. 基础配置 ---
+# PART 1：基础配置 -------------------------------------------------------------
 
 ZIGZAG_ORDER = [
-    (0, 0), (0, 1), (1, 0), (2, 0), (1, 1), (0, 2), (0, 3), (1, 2),
+    (0, 1), (1, 0), (2, 0), (1, 1), (0, 2), (0, 3), (1, 2),
     (2, 1), (3, 0), (4, 0), (3, 1), (2, 2), (1, 3), (0, 4), (0, 5),
     (1, 4), (2, 3), (3, 2), (4, 1), (5, 0), (6, 0), (5, 1), (4, 2),
     (3, 3), (2, 4), (1, 5), (0, 6), (0, 7), (1, 6), (2, 5), (3, 4),
@@ -33,7 +33,7 @@ SIMPLE_HUFFMAN_TABLE = {
     'default': '1111111'
 }
 
-# --- 2. 数值编解码 (保持修正后的版本) ---
+# PART 2：数值编解码组件 -------------------------------------------------------------
 
 def get_size_in_bits(value: int) -> int:
     if value == 0: return 0
@@ -50,7 +50,7 @@ def bitstring_to_int(bitstring: str) -> int:
     if bitstring[0] == '1': return val
     else: return val - ((1 << len(bitstring)) - 1)
 
-# --- 3. 扫描与RLE ---
+# PART 3：扫描与RLE组件 -------------------------------------------------------------
 
 def zigzag_scan(block: np.ndarray) -> List[int]:
     return [int(block[i, j]) for i, j in ZIGZAG_ORDER]
@@ -117,72 +117,60 @@ def run_length_decode(rle_result: List[Tuple[int, int, int]]) -> List[int]:
         
     return zigzag
 
-# --- 4. 熵编解码 (保持不变) ---
+# PART 4：熵编解码组件 -------------------------------------------------------------
+# 注意：熵编码函数已移至coder.py模块
 
-def entropy_encode(rle_result: List[Tuple[int, int, int]]) -> str:
-    encoded_bits = ''
-    # DC
-    dc_run, dc_val, dc_bits = rle_result[0]
-    key = (0, dc_bits)
-    encoded_bits += SIMPLE_HUFFMAN_TABLE[key]
-    if dc_bits > 0: encoded_bits += int_to_bitstring(dc_val, dc_bits)
+# PART 5：任务分发组件 -------------------------------------------------------------
+def encode_ac_coefficients(quantized_blocks: List[np.ndarray]) -> List[str]:
+    """
+    对AC系数进行编码
     
-    # AC
-    for run_len, val, bits in rle_result[1:]:
-        key = (run_len, bits)
-        encoded_bits += SIMPLE_HUFFMAN_TABLE[key]
-        if bits > 0: encoded_bits += int_to_bitstring(val, bits)
-        if key == (0, 0): break
-    return encoded_bits
+    Args:
+        ac_blocks: AC系数块列表
+        
+    Returns:
+        ac_encoded: AC编码结果列表，每个元素是一个位串
+    """
+    ac_encoded = []
+    for block_idx, block in enumerate(quantized_blocks):
+        # Z字形扫描
+        zigzag = zigzag_scan(block)
+        # 游程编码
+        rle = run_length_encode(zigzag)
+        # 注意：熵编码已移至coder.py模块
+        ac_encoded.append(rle)
+    return ac_encoded
 
-def entropy_decode(encoded_bits: str) -> List[Tuple[int, int, int]]:
-    rle_result = []
-    pos = 0
-    rev_table = {v: k for k, v in SIMPLE_HUFFMAN_TABLE.items() if k != 'default'}
-    max_len = max(len(k) for k in rev_table.keys())
-    
-    # 解码 DC
-    for l in range(1, max_len + 1):
-        if pos + l > len(encoded_bits): break
-        code = encoded_bits[pos : pos+l]
-        if code in rev_table and rev_table[code][0] == 0:
-            key = rev_table[code]
-            pos += l
-            dc_bits = key[1]
-            dc_val = 0
-            if dc_bits > 0:
-                dc_val = bitstring_to_int(encoded_bits[pos : pos+dc_bits])
-                pos += dc_bits
-            rle_result.append((0, dc_val, dc_bits))
-            break
 
-    # 解码 AC
-    while pos < len(encoded_bits):
-        found = False
-        for l in range(1, max_len + 1):
-            if pos + l > len(encoded_bits): break
-            code = encoded_bits[pos : pos+l]
-            if code in rev_table:
-                key = rev_table[code]
-                pos += l
-                run_len, bits = key
-                if key == (0, 0):
-                    rle_result.append((0, 0, 0))
-                    return rle_result
-                val = 0
-                if bits > 0:
-                    val = bitstring_to_int(encoded_bits[pos : pos+bits])
-                    pos += bits
-                rle_result.append((run_len, val, bits))
-                found = True
-                break
-        if not found and pos < len(encoded_bits): pos += 1 # Skip
-            
-    if not rle_result or rle_result[-1] != (0, 0, 0):
-        rle_result.append((0, 0, 0))
-    return rle_result
 
-# --- 5. 验证 ---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 def main():
     test_block = np.zeros((8, 8), dtype=np.int32)
@@ -196,12 +184,10 @@ def main():
     
     zigzag = zigzag_scan(test_block)
     rle = run_length_encode(zigzag)
-    bits = entropy_encode(rle)
-    print(f"\n--- 熵编码位串 (Len: {len(bits)}) ---")
-    print(bits)
+    print(f"\n--- RLE编码结果 ---")
+    print(rle[:5])  # 只打印前5个元素
     
-    decoded_rle = entropy_decode(bits)
-    decoded_zigzag = run_length_decode(decoded_rle)
+    decoded_zigzag = run_length_decode(rle)
     recon_block = inverse_zigzag_scan(decoded_zigzag)
     
     print("\n--- 结果验证 ---")

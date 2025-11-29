@@ -20,6 +20,13 @@ import os
 from typing import List, Tuple, Union
 
 
+
+
+
+
+
+
+# PART 1: DCT 变换计算组件 -------------------------------------------------------------
 def compute_dct_basis(size: int = 8) -> np.ndarray:
     """
     计算DCT变换的基矩阵
@@ -88,6 +95,26 @@ def apply_idct_to_block(dct_block: np.ndarray, basis: np.ndarray = None) -> np.n
     return block
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# PART 2：任务分发组件 -------------------------------------------------------------
 def perform_dct_on_blocks(blocks, normalize: bool = True):
     """
     对一组图像块执行DCT变换
@@ -217,6 +244,33 @@ def perform_idct_on_blocks(dct_blocks, normalize: bool = True):
         return blocks
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# PART 3：文件操作组件 -------------------------------------------------------------
 def load_blocks_from_json(file_path: str) -> Tuple[List[np.ndarray], dict]:
     """
     从JSON文件加载图像块数据
@@ -277,6 +331,29 @@ def save_dct_coefficients_to_json(dct_blocks: List[np.ndarray], metadata: dict, 
     except Exception as e:
         print(f"保存DCT系数失败: {e}")
         raise
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def main() -> None:

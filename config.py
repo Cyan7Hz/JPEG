@@ -16,7 +16,7 @@ SAVE_INTERMEDIATE_RESULTS = {
     'dct_coeffs': False,  # 不保存DCT系数
     'quantized_coeffs': False,  # 不保存量化系数
     'dc_encoded': False,
-    'ac_encoded': True,
+    'ac_encoded': False,
     'dc_decoded': False,
     'ac_decoded': False,
     'dequantized_coeffs': False,

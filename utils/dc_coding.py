@@ -4,6 +4,12 @@ import os
 from typing import List, Tuple, Dict, Any
 
 
+
+
+
+
+
+# PART 1：DC 系数提取组件 -------------------------------------------------------------
 def extract_dc_coefficients(quantized_blocks: List[np.ndarray]) -> List[int]:
     """
     从量化后的DCT系数块中提取DC系数
@@ -23,6 +29,27 @@ def extract_dc_coefficients(quantized_blocks: List[np.ndarray]) -> List[int]:
     return dc_coefficients
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# PART 2：DC 码字计算组件 -------------------------------------------------------------
 def calculate_dc_differences(dc_coefficients: List[int]) -> List[int]:
     """
     使用DPCM(差分脉冲编码调制)计算DC系数的差值
@@ -69,6 +96,28 @@ def calculate_bits_required(value: int) -> int:
     return bits
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# PART 3：DC 任务分发组件 -------------------------------------------------------------
 def encode_dc_coefficients(quantized_blocks: List[np.ndarray]) -> Tuple[List[Tuple[int, int]], Dict[str, Any]]:
     """
     对DC系数进行编码
@@ -93,14 +142,14 @@ def encode_dc_coefficients(quantized_blocks: List[np.ndarray]) -> Tuple[List[Tup
         bits = calculate_bits_required(diff)
         dc_encoded.append((bits, diff))
     
-    # 构建元数据
-    metadata = {
-        'block_count': len(quantized_blocks),
-        'dc_coefficients': dc_coefficients,
-        'dc_differences': dc_differences
-    }
+    # # 构建元数据
+    # metadata = {
+    #     'block_count': len(quantized_blocks),
+    #     'dc_coefficients': dc_coefficients,
+    #     'dc_differences': dc_differences
+    # }
     
-    return dc_encoded, metadata
+    return dc_encoded
 
 
 def decode_dc_coefficients(dc_encoded: List[Tuple[int, int]]) -> List[int]:
@@ -133,6 +182,27 @@ def decode_dc_coefficients(dc_encoded: List[Tuple[int, int]]) -> List[int]:
     return dc_coefficients
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# PART 4：Block 重建组件 -------------------------------------------------------------
 def reconstruct_blocks_with_dc(ac_blocks: List[np.ndarray], dc_coefficients: List[int]) -> List[np.ndarray]:
     """
     将解码后的DC系数放回到块中
@@ -185,6 +255,32 @@ def separate_dc_and_ac(quantized_blocks: List[np.ndarray]) -> Tuple[List[int], L
     return dc_coefficients, ac_blocks
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# PART 5：文件操作组件 -------------------------------------------------------------
 def save_dc_encoded(dc_encoded: List[Tuple[int, int]], metadata: Dict[str, Any], file_path: str) -> None:
     """
     保存DC编码结果到JSON文件
@@ -321,7 +417,7 @@ def main() -> None:
     
     # 编码DC系数
     print("\n编码DC系数:")
-    dc_encoded, metadata = encode_dc_coefficients(test_blocks)
+    dc_encoded= encode_dc_coefficients(test_blocks)
     for i, (bits, value) in enumerate(dc_encoded):
         print(f"块 {i}: 位数 = {bits}, 值 = {value}")
     

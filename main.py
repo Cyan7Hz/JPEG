@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from utils import image_io, block_processing, dct_transform, quantization, dc_coding, entropy_coding
+from utils import image_io, block_processing, dct_transform, quantization, dc_coding, ac_coding
 import config
 
 
@@ -64,13 +64,13 @@ def encode_image(image_path: str) -> dict:
         )
     print(f"量化表已保存到: {config.QUANTIZED_COEFFS_FILE}")
     
-    # 5. 分离DC和AC系数
-    print("分离DC和AC系数...")
-    dc_coefficients, ac_blocks = dc_coding.separate_dc_and_ac(quantized_blocks)
+    # # 5. 分离DC和AC系数
+    # print("分离DC和AC系数...")
+    # dc_coefficients, ac_blocks = dc_coding.separate_dc_and_ac(quantized_blocks)
     
     # 6. DC系数编码
     print("编码DC系数...")
-    dc_encoded, dc_metadata = dc_coding.encode_dc_coefficients(quantized_blocks)
+    dc_encoded = dc_coding.encode_dc_coefficients(quantized_blocks)
     
     # 保存DC编码结果（根据配置）
     if config.SAVE_INTERMEDIATE_RESULTS['dc_encoded']:
@@ -79,15 +79,7 @@ def encode_image(image_path: str) -> dict:
     
     # 7. AC系数熵编码
     print("对AC系数进行熵编码...")
-    encoded_ac_data = []
-    for block_idx, ac_block in enumerate(ac_blocks):
-        # Z字形扫描
-        zigzag = entropy_coding.zigzag_scan(ac_block)
-        # 游程编码
-        rle = entropy_coding.run_length_encode(zigzag)
-        # 熵编码
-        encoded_bits = entropy_coding.entropy_encode(rle)
-        encoded_ac_data.append(encoded_bits)
+    ac_encoded = ac_coding.encode_ac_coefficients(quantized_blocks)
     
     # 保存AC熵编码结果（根据配置）
     if config.SAVE_INTERMEDIATE_RESULTS['ac_encoded']:
@@ -97,6 +89,9 @@ def encode_image(image_path: str) -> dict:
                 f.write(bitstring + '\n')
         print(f"AC熵编码结果已保存到: {config.AC_ENCODED_FILE}")
     
+    # 8. ACDC 二进制编码
+    print("对DC,AC系数进行二进制编码...")
+    final_bitstream = coder.encode_and_merge_blocks(dc_encoded, ac_encoded)
     print("=== 图像编码完成 ===")
     return metadata
 
@@ -125,11 +120,11 @@ def decode_image(metadata: dict) -> np.ndarray:
     
     for bitstring in encoded_ac_data:
         # 熵解码
-        decoded_rle = entropy_coding.entropy_decode(bitstring)
+        decoded_rle = ac_coding.entropy_decode(bitstring)
         # 游程解码
-        decoded_zigzag = entropy_coding.run_length_decode(decoded_rle)
+        decoded_zigzag = ac_coding.run_length_decode(decoded_rle)
         # 逆Z字形扫描
-        ac_block = entropy_coding.inverse_zigzag_scan(decoded_zigzag)
+        ac_block = ac_coding.inverse_zigzag_scan(decoded_zigzag)
         decoded_ac_blocks.append(ac_block)
     
     # 保存AC解码结果（根据配置）
