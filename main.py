@@ -49,19 +49,20 @@ def encode_image(image_path: str) -> dict:
         dct_transform.save_dct_coefficients_to_json(dct_blocks, metadata, config.DCT_COEFFS_FILE)
         print(f"DCT系数已保存到: {config.DCT_COEFFS_FILE}")
     
-    # 4. 量化
+        # 4. 量化
     print("执行量化...")
-    quantized_blocks, quant_table = quantization.quantize_blocks(
-        dct_blocks, config.QUALITY_FACTOR, config.COMPONENT_TYPE
+    quantized_blocks, quant_tables = quantization.quantize_blocks(
+        dct_blocks, config.QUALITY_FACTOR, config.QUANTIZATION_MODE
     )
-    metadata['quantization_table'] = quant_table.tolist()
+    metadata['quantization_tables'] = [table.tolist() for table in quant_tables]
     
     # 保存量化系数（根据配置）
     if config.SAVE_INTERMEDIATE_RESULTS['quantized_coeffs']:
+        # 根据量化模式保存相应的量化表
         quantization.save_quantized_coefficients(
-            quantized_blocks, quant_table, metadata, config.QUANTIZED_COEFFS_FILE
+            quantized_blocks, quant_tables, metadata, config.QUANTIZED_COEFFS_FILE
         )
-        print(f"量化系数已保存到: {config.QUANTIZED_COEFFS_FILE}")
+    print(f"量化表已保存到: {config.QUANTIZED_COEFFS_FILE}")
     
     # 5. 分离DC和AC系数
     print("分离DC和AC系数...")
@@ -155,17 +156,14 @@ def decode_image(metadata: dict) -> np.ndarray:
     
     # 4. 逆量化
     print("执行逆量化...")
-    quant_table = np.array(metadata['quantization_table'], dtype=np.float64)
+    quant_tables = [np.array(table, dtype=np.float64) for table in metadata['quantization_tables']]
+    # 获取通道数，从分块信息中推断
+    channels = 3  # 默认为3通道彩色图像
+    if 'channels' in metadata:
+        channels = metadata['channels']
     dequantized_blocks = quantization.dequantize_blocks(
-        reconstructed_blocks, quant_table
+        reconstructed_blocks, quant_tables, channels
     )
-    
-    # 保存逆量化系数（根据配置）
-    if config.SAVE_INTERMEDIATE_RESULTS['dequantized_coeffs']:
-        quantization.save_dequantized_coefficients(
-            dequantized_blocks, metadata, config.DEQUANTIZED_COEFFS_FILE
-        )
-        print(f"逆量化系数已保存到: {config.DEQUANTIZED_COEFFS_FILE}")
     
     # 5. IDCT变换
     print("执行IDCT变换...")

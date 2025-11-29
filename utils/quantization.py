@@ -4,6 +4,10 @@ import os
 from typing import List, Dict, Union, Tuple
 
 
+
+
+# PART 1: 量化表定义 ----------------------------------------------------------------------
+
 # JPEG标准量化表 - 亮度分量（高质量）
 JPEG_LUMINANCE_QUANT_TABLE = np.array([
     [16, 11, 10, 16, 24, 40, 51, 61],
@@ -27,7 +31,6 @@ JPEG_CHROMINANCE_QUANT_TABLE = np.array([
     [99, 99, 99, 99, 99, 99, 99, 99],
     [99, 99, 99, 99, 99, 99, 99, 99]
 ], dtype=np.float64)
-
 
 def generate_quantization_table(quality: int, is_luminance: bool = True) -> np.ndarray:
     """
@@ -65,6 +68,24 @@ def generate_quantization_table(quality: int, is_luminance: bool = True) -> np.n
     
     return quant_table.astype(np.float64)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# PART 2: 量化操作 ----------------------------------------------------------------------
 
 def quantize_block(dct_block: np.ndarray, quant_table: np.ndarray) -> np.ndarray:
     """
@@ -110,104 +131,210 @@ def dequantize_block(quantized_block: np.ndarray, quant_table: np.ndarray) -> np
     return dequantized_block
 
 
-def quantize_blocks(dct_blocks: List[np.ndarray], quality: int = 80, component_type: str = 'luminance') -> Tuple[List[np.ndarray], np.ndarray]:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# PART 3: 量化任务分发 ----------------------------------------------------------------------
+def quantize_blocks(dct_blocks, quality: int = 80, quantization_mode: str = 'single') -> Tuple[List[np.ndarray], List[np.ndarray]]:
     """
     对多个DCT系数块进行量化
     
     Args:
-        dct_blocks: DCT系数块列表，每个块形状为(8, 8)
+        dct_blocks: DCT系数块，可以是以下两种格式之一：
+                   1. 列表格式：DCT系数块列表，每个块形状为(8, 8)
+                   2. 数组格式：numpy数组，形状为(channels, num_blocks_h, num_blocks_w, block_size, block_size)
         quality: 质量因子，范围1-100
-        component_type: 分量类型，'luminance'（亮度）或 'chrominance'（色度）
+        quantization_mode: 量化模式，'single'(所有通道使用亮度表) 或 'dual'(亮度表+色度表)
         
     Returns:
-        quantized_blocks: 量化后的系数块列表
-        quant_table: 使用的量化表
+        quantized_blocks: 量化后的系数块列表，每个块形状为(8, 8)
+        quant_tables: 唯一的量化表列表（不包含重复表）
     """
-    # 生成量化表
-    is_luminance = (component_type.lower() == 'luminance')
-    quant_table = generate_quantization_table(quality, is_luminance)
+    # 验证量化模式
+    if quantization_mode not in ['single', 'dual']:
+        raise ValueError("量化模式必须是 'single' 或 'dual'")
     
-    # 对每个块进行量化
-    quantized_blocks = []
-    for block in dct_blocks:
-        quantized_block = quantize_block(block, quant_table)
-        quantized_blocks.append(quantized_block)
+    # 检查输入类型
+    if isinstance(dct_blocks, list):
+        # 原始列表格式处理 - 所有块使用相同的量化表
+        quant_table = generate_quantization_table(quality, is_luminance=True)
+        quantized_blocks = []
+        for block in dct_blocks:
+            quantized_block = quantize_block(block, quant_table)
+            quantized_blocks.append(quantized_block)
+        
+        return quantized_blocks, [quant_table]
+    else:
+        # 新的数组格式处理 (channels, num_blocks_h, num_blocks_w, block_size, block_size)
+        # 检查输入形状
+        if len(dct_blocks.shape) != 5:
+            raise ValueError(f"输入DCT块组必须是5维数组，当前形状: {dct_blocks.shape}")
+        
+        channels, num_blocks_h, num_blocks_w, block_size_h, block_size_w = dct_blocks.shape
+        
+        # 检查块大小是否为8x8
+        if block_size_h != 8 or block_size_w != 8:
+            raise ValueError(f"输入DCT块必须是8x8大小，当前形状: {dct_blocks.shape}")
+        
+        # 根据量化模式生成量化表（只保存唯一的表）
+        quant_tables = []
+        if quantization_mode == 'single':
+            # 单表模式：所有通道使用亮度表
+            luminance_table = generate_quantization_table(quality, is_luminance=True)
+            quant_tables = [luminance_table]
+        else:
+            # 双表模式：只保存亮度表和色度表（不重复）
+            luminance_table = generate_quantization_table(quality, is_luminance=True)
+            chrominance_table = generate_quantization_table(quality, is_luminance=False)
+            quant_tables = [luminance_table, chrominance_table]
+        
+        # 初始化输出列表
+        quantized_blocks = []
+        
+        # 对每个通道的每个块进行量化，并将结果添加到列表中
+        for c in range(channels):
+            # 确定当前通道使用的量化表索引
+            if quantization_mode == 'single':
+                table_index = 0  # 单表模式下所有通道都使用第0个表
+            else:
+                # 双表模式下：第一个通道使用亮度表(索引0)，其他通道使用色度表(索引1)
+                table_index = 0 if c == 0 else 1
+            
+            # 获取对应的量化表
+            quant_table = quant_tables[table_index]
+            
+            for i in range(num_blocks_h):
+                for j in range(num_blocks_w):
+                    # 获取当前块
+                    block = dct_blocks[c, i, j]
+                    
+                    # 量化
+                    quantized_block = quantize_block(block, quant_table)
+                    
+                    # 添加到输出列表
+                    quantized_blocks.append(quantized_block)
     
-    return quantized_blocks, quant_table
+    return quantized_blocks, quant_tables
 
-
-def dequantize_blocks(quantized_blocks: List[np.ndarray], quant_table: np.ndarray) -> List[np.ndarray]:
+def dequantize_blocks(quantized_blocks, quant_tables: List[np.ndarray], channels: int = 3) -> List[np.ndarray]:
     """
     对多个量化系数块进行逆量化
     
     Args:
         quantized_blocks: 量化后的系数块列表，每个块形状为(8, 8)
-        quant_table: 使用的量化表
+        quant_tables: 唯一的量化表列表
+        channels: 通道数，用于确定每个通道有多少个块
         
     Returns:
-        dequantized_blocks: 逆量化后的DCT系数块列表
+        dequantized_blocks: 逆量化后的DCT系数块列表，每个块形状为(8, 8)
     """
-    # 对每个块进行逆量化
-    dequantized_blocks = []
-    for block in quantized_blocks:
-        dequantized_block = dequantize_block(block, quant_table)
-        dequantized_blocks.append(dequantized_block)
-    
-    return dequantized_blocks
+    # 根据量化表数量判断模式
+    if len(quant_tables) == 1:
+        # 单表模式：所有块使用同一个表
+        quant_table = quant_tables[0]
+        dequantized_blocks = []
+        for block in quantized_blocks:
+            dequantized_block = dequantize_block(block, quant_table)
+            dequantized_blocks.append(dequantized_block)
+        return dequantized_blocks
+    else:
+        # 多表模式（假设是双表模式）：
+        # 第一个表用于第一个通道，第二个表用于其他所有通道
+        luminance_table = quant_tables[0]    # 亮度表
+        chrominance_table = quant_tables[1]  # 色度表
+        
+        # 计算每个通道的块数
+        total_blocks = len(quantized_blocks)
+        blocks_per_channel = total_blocks // channels
+        
+        dequantized_blocks = []
+        block_index = 0
+        
+        # 对每个通道使用对应的量化表
+        for c in range(channels):
+            # 确定当前通道使用的量化表
+            quant_table = luminance_table if c == 0 else chrominance_table
+            
+            # 对当前通道的所有块进行逆量化
+            for i in range(blocks_per_channel):
+                if block_index < total_blocks:
+                    block = quantized_blocks[block_index]
+                    dequantized_block = dequantize_block(block, quant_table)
+                    dequantized_blocks.append(dequantized_block)
+                    block_index += 1
+        
+        return dequantized_blocks
 
 
-def load_quantized_coefficients(file_path: str) -> Tuple[List[np.ndarray], np.ndarray, dict]:
-    """
-    从JSON文件加载量化系数和量化表
-    
-    Args:
-        file_path: JSON文件路径
-        
-    Returns:
-        quantized_blocks: 量化系数块列表
-        quant_table: 使用的量化表
-        metadata: 元数据字典
-    """
-    try:
-        with open(file_path, 'r') as f:
-            data = json.load(f)
-        
-        # 加载量化系数块
-        quantized_blocks_data = data['quantized_blocks']
-        quantized_blocks = [np.array(block, dtype=np.int32) for block in quantized_blocks_data]
-        
-        # 加载量化表
-        quant_table = np.array(data['quantization_table'], dtype=np.float64)
-        
-        # 加载元数据
-        metadata = data['metadata'] if 'metadata' in data else {}
-        
-        return quantized_blocks, quant_table, metadata
-    except Exception as e:
-        print(f"加载量化系数失败: {e}")
-        raise
 
 
-def save_quantized_coefficients(quantized_blocks: List[np.ndarray], quant_table: np.ndarray, 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# PART 4: 量化系数文件读写 ----------------------------------------------------------------------
+
+def save_quantized_coefficients(quantized_blocks: List[np.ndarray], quant_tables: List[np.ndarray], 
                                metadata: dict, file_path: str) -> None:
     """
     保存量化系数和量化表到JSON文件
     
     Args:
         quantized_blocks: 量化系数块列表
-        quant_table: 使用的量化表
+        quant_tables: 使用的量化表列表
         metadata: 元数据字典
         file_path: 输出JSON文件路径
     """
     try:
         # 将numpy数组转换为列表以便JSON序列化
         quantized_blocks_data = [block.tolist() for block in quantized_blocks]
-        quant_table_data = quant_table.tolist()
+        quant_tables_data = [table.tolist() for table in quant_tables]
         
         # 创建保存数据
         save_data = {
             'quantized_blocks': quantized_blocks_data,
-            'quantization_table': quant_table_data,
+            'quantization_tables': quant_tables_data,
             'metadata': metadata
         }
         
@@ -224,64 +351,59 @@ def save_quantized_coefficients(quantized_blocks: List[np.ndarray], quant_table:
         raise
 
 
-def save_dequantized_coefficients(dequantized_blocks: List[np.ndarray], metadata: dict, file_path: str) -> None:
+def load_quantized_coefficients(file_path: str) -> Tuple[List[np.ndarray], List[np.ndarray], dict]:
     """
-    保存逆量化后的DCT系数到JSON文件
-    
-    Args:
-        dequantized_blocks: 逆量化后的DCT系数块列表
-        metadata: 元数据字典
-        file_path: 输出JSON文件路径
-    """
-    try:
-        # 将numpy数组转换为列表以便JSON序列化
-        dequantized_blocks_data = [block.tolist() for block in dequantized_blocks]
-        
-        # 创建保存数据
-        save_data = {
-            'dequantized_blocks': dequantized_blocks_data,
-            'metadata': metadata
-        }
-        
-        # 确保输出目录存在
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        
-        # 保存到JSON文件
-        with open(file_path, 'w') as f:
-            json.dump(save_data, f, indent=2)
-            
-        print(f"逆量化系数已保存到: {file_path}")
-    except Exception as e:
-        print(f"保存逆量化系数失败: {e}")
-        raise
-
-
-def load_dequantized_coefficients(file_path: str) -> Tuple[List[np.ndarray], dict]:
-    """
-    从JSON文件加载逆量化后的DCT系数
+    从JSON文件加载量化系数和量化表
     
     Args:
         file_path: JSON文件路径
         
     Returns:
-        dequantized_blocks: 逆量化后的DCT系数块列表
+        quantized_blocks: 量化系数块列表
+        quant_tables: 使用的量化表列表
         metadata: 元数据字典
     """
     try:
         with open(file_path, 'r') as f:
             data = json.load(f)
         
-        # 加载逆量化系数块
-        dequantized_blocks_data = data['dequantized_blocks']
-        dequantized_blocks = [np.array(block, dtype=np.float64) for block in dequantized_blocks_data]
+        # 加载量化系数块
+        quantized_blocks_data = data['quantized_blocks']
+        quantized_blocks = [np.array(block, dtype=np.int32) for block in quantized_blocks_data]
+        
+        # 加载量化表
+        quant_tables_data = data['quantization_tables']
+        quant_tables = [np.array(table, dtype=np.float64) for table in quant_tables_data]
         
         # 加载元数据
         metadata = data['metadata'] if 'metadata' in data else {}
         
-        return dequantized_blocks, metadata
+        return quantized_blocks, quant_tables, metadata
     except Exception as e:
-        print(f"加载逆量化系数失败: {e}")
+        print(f"加载量化系数失败: {e}")
         raise
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def main() -> None:

@@ -4,6 +4,7 @@
 BLOCK_SIZE = 8  # 分块大小
 QUALITY_FACTOR = 80  # 质量因子(1-100)
 COMPONENT_TYPE = 'luminance'  # 分量类型: 'luminance'或'chrominance'
+QUANTIZATION_MODE = 'single'  # 量化模式: 'single'(所有通道使用亮度表) 或 'dual'(亮度表+色度表)
 
 # 文件路径配置
 INPUT_IMAGE_PATH = 'data/input.jpg'  # 输入图像路径
