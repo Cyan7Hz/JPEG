@@ -7,7 +7,8 @@
 ├── main.py # 主程序入口 
 ├── config.py # 配置文件 
 ├── compare.py # DC编码解码数据对比工具 
-├── value.txt # 临时数据文件 
+├── value.txt # 临时数据文件
+|
 ├── utils/ # 工具模块 
 │ ├── image_io.py # 图像输入输出处理 
 │ ├── block_processing.py # 图像分块与重组 
@@ -16,16 +17,13 @@
 │ ├── dc_coding.py # DC系数编码/解码 
 │ ├── ac_coding.py # AC系数编码/解码 
 │ └── coder.py # 二进制编解码 
+|
 ├── data/ # 测试图像数据 
 │ ├── input.jpg # 示例输入图像 
-│ ├── input_1.jpg # 额外测试图像 
 │ └── output.jpg # 输出图像 
+|
 ├── output/ # 输出文件目录 
-│ ├── dc_encoded.json # DC编码结果 
-│ ├── ac_encoded.json # AC编码结果 
-│ ├── dc_decoded.json # DC解码结果 
-│ ├── ac_decoded.json # AC解码结果 
-│ └── reconstructed_blocks.json # 重建块数据 
+│
 └── tests/ # 测试目录（当前为空）
 ```
 

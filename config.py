@@ -7,18 +7,18 @@ COMPONENT_TYPE = 'luminance'  # 分量类型: 'luminance'或'chrominance'
 QUANTIZATION_MODE = 'single'  # 量化模式: 'single'(所有通道使用亮度表) 或 'dual'(亮度表+色度表)
 
 # 文件路径配置
-INPUT_IMAGE_PATH = 'data/input.jpg'  # 输入图像路径
-OUTPUT_IMAGE_PATH = 'data/output.jpg'  # 输出图像路径
+INPUT_IMAGE_PATH = 'data/input_1.jpg'  # 输入图像路径
+OUTPUT_IMAGE_PATH = 'data/output_q_80.jpg'  # 输出图像路径
 
 # 中间结果保存路径
 SAVE_INTERMEDIATE_RESULTS = {
     'blocks': False,
     'dct_coeffs': False,  # 不保存DCT系数
     'quantized_coeffs': False,  # 不保存量化系数
-    'dc_encoded': True,
-    'ac_encoded': True,
-    'dc_decoded': True,
-    'ac_decoded': True,
+    'dc_encoded': False,
+    'ac_encoded': False,
+    'dc_decoded': False,
+    'ac_decoded': False,
     'dequantized_coeffs': False,
     'reconstructed_blocks': False
 }

@@ -57,7 +57,24 @@ def generate_quantization_table(quality: int, is_luminance: bool = True) -> np.n
         scale_factor = 50.0 / quality
     else:
         scale_factor = 2.0 - quality / 50.0
+        
+    # 1. 对整个表应用缩放因子，得到 AC 缩放后的结果
+    scaled_table = base_table * scale_factor
     
+    # 2. 构造一个布尔掩码：AC = True, DC = False
+    ac_mask = np.ones(base_table.shape, dtype=bool)
+    ac_mask[0, 0] = False
+    
+    # 3. 复制基础表作为最终表的起点
+    quant_table = base_table.copy()
+    
+    # 4. 只有 AC 位置使用缩放后的值
+    # 这一步实现了：quant_table[AC] = scaled_table[AC]
+    #               quant_table[DC] = base_table[DC] (未缩放)
+    quant_table[ac_mask] = scaled_table[ac_mask]
+    
+    # 5. 四舍五入取整
+    quant_table = np.round(quant_table)
     # 生成量化表
     quant_table = np.round(base_table * scale_factor)
     

@@ -93,6 +93,43 @@ def encode_image(image_path: str) -> dict:
     final_bitstream = coder.encode_acdc2bits(dc_encoded, ac_encoded)
     metadata['bit_stream'] = final_bitstream
     print(f"最终比特流长度: {len(final_bitstream)}")
+
+# =======================================================================
+    # 9. 新增：计算压缩比
+    # =======================================================================
+    
+    NUM_COEFFS_PER_BLOCK = 64
+    DC_COEFF_BIT_DEPTH = 26  # 假设熵编码前每个tuple用16位存储
+    AC_COEFF_BIT_DEPTH = 16  # 假设熵编码前每个tuple用16位存储
+    AMP_BIT_DEPTH = 8  # 假设熵编码前每个像素点用24位存储
+
+    num_blocks = len(quantized_blocks)
+    
+    print("\n--- 压缩比分析 ---")
+    
+    if len(final_bitstream) > 0:
+        
+        # --- 1. 系数级压缩比 (熵编码效率) ---
+        size_init = num_blocks * NUM_COEFFS_PER_BLOCK * (AMP_BIT_DEPTH)
+        cr_all = size_init / len(final_bitstream)
+
+        size_pre_entropy = num_blocks * (DC_COEFF_BIT_DEPTH + (NUM_COEFFS_PER_BLOCK-1) * AC_COEFF_BIT_DEPTH)
+        cr_entropy = size_pre_entropy / len(final_bitstream)
+
+        print(f"1. 熵编码前存储 block list 的理论大小(16bit/dc_coeff, 16bit/ac_coeff): {size_pre_entropy} bits")
+        print(f"   => 无损编码单步压缩比 (CR_Entropy): {cr_entropy:.4f}")
+        # --- 2. 图像级近似压缩比 (总体效果) ---
+        size_original_image = image_height * image_width * image_channels * 8 # 8bit/pixel
+        cr_image_approx = size_original_image / len(final_bitstream)
+        
+        print(f"2. 原始图像像素数据大小 (8bit/pixel): {size_original_image} bits")
+        print(f"   => 图像级近似压缩比 (CR_Image): {cr_image_approx:.4f}")
+        
+    else:
+        print("最终比特流长度为零，无法计算压缩比。")
+        
+    # =======================================================================
+
     print("=== 图像编码完成 ===")
     return metadata
 
@@ -162,6 +199,10 @@ def decode_image(metadata: dict) -> np.ndarray:
     reconstructed_image = image_io.ycrcb_to_rgb(reconstructed_image)
     
     print("=== 图像解码完成 ===")
+
+    
+
+
     return reconstructed_image
 
 
@@ -170,6 +211,8 @@ def main():
     # 编码图像
     metadata = encode_image(config.INPUT_IMAGE_PATH)
     
+
+
     # 解码图像
     reconstructed_image = decode_image(metadata)
     
